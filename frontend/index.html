@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Graph Harvester</title>
+  <style>
+    body,
+    html {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f0f0;
+      color: #333;
+      line-height: 1.6;
+    }
+
+    #page-container {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .content {
+      /* take all that is not taken by footer */
+      flex: 1;
+      max-width: 1600px;
+      min-width: 800px;
+      margin: 0 auto;
+      padding: 10px;
+      background-color: #fff;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: center;
+      justify-items: center;
+      gap: 10px;
+    }
+
+    h1 {
+      color: #2c3e50;
+      text-align: center;
+      font-size: 2.5em;
+    }
+
+    .resultContainer {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      gap: 10px;
+    }
+
+    .svgContainer {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: 1fr;
+      gap: 0px 10px;
+      grid-template-areas:
+        "graphContainer pdfContainer";
+    }
+
+
+    .graphContainer,
+    .pdfContainer {
+      background-color: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+      min-width: 350px;
+    }
+
+    .pdfContainer {
+      grid-area: pdfContainer;
+    }
+
+    .graphContainer {
+      grid-area: graphContainer;
+    }
+
+    .graphWrapper,
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .graphWrapper {
+      display: inline-block;
+    }
+
+    svg,
+    img {
+      max-width: 100%;
+      max-height: 100%;
+    }
+
+    .graphDescription,
+    .pdfDescription {
+      font-style: italic;
+      color: #7f8c8d;
+    }
+
+    .caption {
+      font-weight: bold;
+    }
+
+    .graph6 {
+      background-color: #ecf0f1;
+      padding: 10px;
+      border-radius: 5px;
+      font-family: monospace;
+      /* align center */
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .g6cell {
+      display: grid;
+      grid-template-columns: auto auto;
+      align-items: end;
+      gap: 0.5ex
+    }
+
+    .g6cell-txt {
+      display: -webkit-inline-box;
+      overflow: hidden;
+      text-overflow: ellisis;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+    }
+
+    .g6cell-btn:hover {
+      cursor: pointer;
+    }
+
+    .g6cell-btn:active {
+      color: white;
+    }
+
+    .navigation-buttons {
+      width: 100%;
+      text-align: center;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-sizing: border-box;
+    }
+
+    .left-spacer,
+    .right-buttons {
+      flex: 1;
+    }
+
+    .center-buttons {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex: 1;
+    }
+
+    button {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      margin: 0 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+      width: 100px;
+      display: block;
+    }
+
+    button:hover {
+      background-color: #2980b9;
+    }
+
+    .reload-button {
+      margin-left: auto;
+    }
+
+    .loader {
+      /* border: 5px solid #f3f3f3;
+      border-top: 5px solid #3498db;
+      border-radius: 50%; */
+      width: 200px;
+      height: 200px;
+      margin: 50px auto;
+      animation: spin 4s linear infinite;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(-360deg);
+      }
+    }
+
+    /* alternative loader */
+    .node {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      position: absolute;
+      background-color: #3498db;
+      transition: background-color 0.5s ease;
+    }
+
+    .edge {
+      position: absolute;
+      height: 2px;
+      background-color: #000;
+      transition: background-color 0.5s ease;
+    }
+
+    #node1 {
+      top: 0;
+      left: 0;
+    }
+
+    #node2 {
+      top: 0;
+      right: 0;
+    }
+
+    #node3 {
+      bottom: 0;
+      left: 0;
+    }
+
+    #node4 {
+      bottom: 0;
+      right: 0;
+    }
+
+    #edge1 {
+      width: 180px;
+      top: 10px;
+      left: 10px;
+    }
+
+    #edge2 {
+      width: 2px;
+      height: 180px;
+      top: 10px;
+      left: 10px;
+    }
+
+    #edge3 {
+      width: 180px;
+      bottom: 10px;
+      left: 10px;
+    }
+
+    #edge4 {
+      width: 2px;
+      height: 180px;
+      top: 10px;
+      right: 10px;
+    }
+
+    .ray {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background-color: #ff6b6b;
+      border-radius: 50%;
+      animation: traceEdges 6s linear infinite;
+    }
+
+    @keyframes traceEdges {
+
+      0%,
+      100% {
+        top: 5px;
+        left: 5px;
+      }
+
+      25% {
+        top: 5px;
+        left: 185px;
+      }
+
+      50% {
+        top: 185px;
+        left: 185px;
+      }
+
+      75% {
+        top: 185px;
+        left: 5px;
+      }
+    }
+
+    .loaderContainer {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th {
+      background-color: #3498db;
+      color: white;
+      font-weight: bold;
+    }
+
+    td {
+      padding: 8px;
+      border: 1px solid #ddd;
+    }
+
+    .drop-zone {
+      max-width: 300px;
+      height: 200px;
+      padding: 25px;
+      border: 2px dashed #cccccc;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      cursor: pointer;
+    }
+
+    .drop-zone:hover {
+      border-color: #666666;
+    }
+
+    .drop-zone--over {
+      border-color: #666666;
+    }
+
+    .drop-zone__input {
+      display: none;
+    }
+
+    .flex-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .flex-row {
+      display: flex;
+      flex-direction: row;
+    }
+
+    /* FOOTER */
+    .footer {
+      background-color: #333;
+      color: #fff;
+    }
+
+    /* all a in footer */
+    .footer a {
+      color: #fff;
+    }
+
+    .footer-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .footer-bottom {
+      text-align: center;
+      border-top: 1px solid #555;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="page-container">
+    <div class="content">
+      <h1>Graph Harvester</h1>
+
+      <div id="startingContainer" class="flex-col">
+        <span style="text-align: center;">
+          If you upload a PDF file containing vector-based graph drawings,<br>
+          the system will extract corresponding graphs and provide their downloadable adjacency matrices.
+        </span>
+        <div class="drop-zone" id="pdfDropzone">
+          <span class="drop-zone__prompt">Drop files here or click to upload</span>
+          <!-- allowed files pdf -->
+          <input type="file" name="file" class="drop-zone__input" id="file-input" accept=".pdf" />
+        </div>
+      </div>
+
+      <div class="loaderContainer" id="loaderContainer">
+        <div class="loader">
+          <div class="edge" id="edge1"></div>
+          <div class="edge" id="edge2"></div>
+          <div class="edge" id="edge3"></div>
+          <div class="edge" id="edge4"></div>
+          <div class="ray"></div>
+          <div class="node" id="node1"></div>
+          <div class="node" id="node2"></div>
+          <div class="node" id="node3"></div>
+          <div class="node" id="node4"></div>
+        </div>
+        <!-- <div class="loader" id="loader"></div> -->
+        <p id="loadingMsg"></p>
+      </div>
+
+      <div id="resultContainer" class="resultContainer">
+        <div class="navigation-buttons" id="navigation-buttons">
+          <div class="left-spacer"></div>
+          <div class="center-buttons">
+            <button id="prevBtn">Previous</button>
+            <!-- current index -->
+            <span id="currentIndex"></span>
+            <button id="nextBtn">Next</button>
+          </div>
+          <div class="right-buttons">
+            <button id="reloadBtn" class="reload-button">New Upload</button>
+          </div>
+        </div>
+
+        <div class="svgContainer">
+          <div class="graphContainer" id="graphContainer">
+            <div class="graphWrapper" id="graphWrapper"></div>
+            <div class="graphDescription" id="graphDescription">
+              <p>Graph produced by Graph Harvester</p>
+            </div>
+          </div>
+
+          <div class="pdfContainer" id="pdfContainer">
+            <div class="pdfWrapper" id="pdfWrapper"></div>
+            <div class="pdfDescription" id="pdfDescription">
+              <p>Original from PDF</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="caption" id="caption"></div>
+
+        <div class="graph6" id="graph6"></div>
+
+      </div>
+    </div>
+
+    <!-- footer -->
+    <footer class="footer">
+      <div class="footer-container">
+        <h3>Graph Harvester</h3>
+        <!-- <a href="#">About</a>
+        <a href="#">Contact</a>
+        <a href="#">Privacy Policy</a>
+        <a href="#">Terms of Service</a> -->
+      </div>
+
+      <div class="footer-bottom">
+        <p>&copy; 2024 Julius-Maximilians-Universität of Würzburg. All rights reserved.</p>
+      </div>
+    </footer>
+  </div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    // const URL = ""
+    const URL = "/graph_harvester"
+    // const URL = "https://projekte-ls6.informatik.uni-wuerzburg.de/graph_harvester"
+
+    const elements = {
+      loaderContainer: document.getElementById("loaderContainer"),
+      graphContainer: document.getElementById("graphContainer"),
+      pdfContainer: document.getElementById("pdfContainer"),
+      graphDescription: document.getElementById("graphDescription"),
+      pdfDescription: document.getElementById("pdfDescription"),
+      navigationButtons: document.getElementById("navigation-buttons"),
+
+      pdfDropzone: document.getElementById("pdfDropzone"),
+      fileInput: document.getElementById("file-input"),
+      startingContainer: document.getElementById("startingContainer"),
+
+      graphWrapper: document.getElementById("graphWrapper"),
+      pdfWrapper: document.getElementById("pdfWrapper"),
+      caption: document.getElementById("caption"),
+      graph6Wrapper: document.getElementById("graph6"),
+      prevBtn: document.getElementById("prevBtn"),
+      nextBtn: document.getElementById("nextBtn"),
+      reloadBtn: document.getElementById("reloadBtn"),
+      resultContainer: document.getElementById("resultContainer"),
+      loadingMsg: document.getElementById("loadingMsg"),
+
+      currentIndex: document.getElementById("currentIndex")
+    };
+
+    // hide all elements except the dropzone
+    showElement(elements.startingContainer);
+    hideElements([
+      elements.loaderContainer,
+      elements.resultContainer
+    ]);
+
+    elements.prevBtn.addEventListener("click", () => navigateGraph(-1));
+    elements.nextBtn.addEventListener("click", () => navigateGraph(1));
+    elements.reloadBtn.addEventListener("click", reloadPage);
+    document.addEventListener("keydown", handleKeyNavigation);
+
+
+    let currentGraphIndex = 0;
+    let svgElements = [];
+    let imgElements = [];
+    let captions = [];
+    let graph6 = [];
+
+    function renderGraph(graphData) {
+      console.log("Rendering graph:", graphData);
+      const data = typeof graphData === 'string' ? JSON.parse(graphData) : graphData;
+
+      currentGraphIndex = 0;
+      clearContainers();
+
+      data.forEach((graph, index) => {
+        // graph is a dictionary
+        const svg = createSVGContainer(graph["boundingBox"]);
+        elements.graphWrapper.appendChild(svg);
+        const d3svg = d3.select(svg);
+        if (graph["lines"].length === 0 && graph["beziers"].length === 0 && graph["circles"].length === 0) {
+          const text = d3svg.append("text")
+            .attr("x", graph["boundingBox"][0] + (graph["boundingBox"][2] - graph["boundingBox"][0]) / 2)
+            .attr("y", graph["boundingBox"][1] + (graph["boundingBox"][3] - graph["boundingBox"][1]) / 2)
+            .attr("text-anchor", "middle")
+            .attr("dominant-baseline", "middle")
+            .text("No graph found");
+        } else {
+          renderLines(d3svg, graph["lines"], index);
+          renderBeziers(d3svg, graph["beziers"], index);
+          renderCircles(d3svg, graph["circles"], index);
+        }
+        svgElements.push(svg);
+
+        const caption = createCaption(graph["caption"]);
+        elements.caption.appendChild(caption);
+        captions.push(caption);
+
+        if (graph["graph6_strings"].length === 0) {
+          // empty object
+          const empty = document.createElement("p");
+          empty.textContent = "No interesting graph6 strings found";
+          elements.graph6Wrapper.appendChild(empty);
+          graph6.push(empty);
+
+        } else {
+          const table = createGraph6Table(graph["graph6_strings"], graph["hog_ids"]);
+          elements.graph6Wrapper.appendChild(table);
+          graph6.push(table);
+        }
+
+        const img = createImage(graph["img"]);
+        elements.pdfWrapper.appendChild(img);
+        imgElements.push(img);
+      });
+
+      // update current index with padding 0 
+      elements.currentIndex.textContent = `${svgElements.length == 0 ? 0 : currentGraphIndex + 1}`.padStart(2, "0") + "/" + `${svgElements.length}`.padStart(2, "0");
+
+      showGraph(currentGraphIndex);
+    }
+
+    function createSVGContainer(boundingBox) {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", `${boundingBox[0]} ${boundingBox[1]} ${boundingBox[2] - boundingBox[0]} ${boundingBox[3] - boundingBox[1]}`);
+      svg.style.width = "100%";
+      svg.style.height = "100%";
+      svg.style.display = "none";
+      return svg;
+    }
+
+    function renderLines(d3svg, lines, index) {
+      d3svg.selectAll(`.line-group-${index}`)
+        .data(lines)
+        .enter()
+        .append("line")
+        .attr("class", `line-group-${index}`)
+        .attr("x1", d => d.start.x)
+        .attr("y1", d => d.start.y)
+        .attr("x2", d => d.stop.x)
+        .attr("y2", d => d.stop.y)
+        .style("stroke", "#ff7f0e")
+        .style("stroke-width", 2);
+    }
+
+    function renderBeziers(d3svg, beziers, index) {
+      d3svg.selectAll(`.bezier-group-${index}`)
+        .data(beziers)
+        .enter()
+        .append("path")
+        .attr("class", `bezier-group-${index}`)
+        .attr("d", d => `M ${d.start.x},${d.start.y} C ${d.p1.x},${d.p1.y} ${d.p2.x},${d.p2.y} ${d.stop.x},${d.stop.y}`)
+        .attr("fill", "none")
+        .attr("stroke", "#2ca02c")
+        .attr("stroke-width", 2);
+    }
+
+    function renderCircles(d3svg, circles, index) {
+      d3svg.selectAll(`.circle-group-${index}`)
+        .data(circles)
+        .enter()
+        .append("circle")
+        .attr("class", `circle-group-${index}`)
+        .attr("cx", d => d.center.x)
+        .attr("cy", d => d.center.y)
+        .attr("r", d => d.radius)
+        .style("fill", "#1f77b4");
+    }
+
+    function createCaption(text) {
+      const caption = document.createElement("p");
+      caption.textContent = text;
+      caption.style.display = "none";
+      return caption;
+    }
+
+    function createGraph6Table(graph6Strings, hogIds) {
+      const table = document.createElement("table");
+
+      const tableHeader = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      const header1 = createTableHeader("Graph6 String");
+      const header2 = createTableHeader("HoG Link");
+
+      headerRow.appendChild(header1);
+      headerRow.appendChild(header2);
+      tableHeader.appendChild(headerRow);
+      table.appendChild(tableHeader);
+
+      const tableBody = document.createElement("tbody");
+      graph6Strings.forEach((string, i) => {
+        const row = document.createElement("tr");
+        const cell1 = createG6Cell(string);
+        const cell2 = createHoGLinkCell(hogIds[i], string);
+
+        row.appendChild(cell1);
+        row.appendChild(cell2);
+        tableBody.appendChild(row);
+      });
+
+      table.appendChild(tableBody);
+      table.style.display = "none";
+      return table;
+    }
+
+    function createTableHeader(text) {
+      const header = document.createElement("th");
+      header.textContent = text;
+      return header;
+    }
+
+    function createG6Cell(g6Str) {
+      const cell = document.createElement("td");
+      const box  = document.createElement("div");
+      const text = document.createElement("span");
+      const btn  = document.createElement("div");
+      box.className = "g6cell";
+      text.textContent = g6Str;
+      text.className = "g6cell-txt";
+      btn.textContent = "⧉";
+      btn.className = "g6cell-btn";
+      btn.onclick = () => { navigator.clipboard.writeText(g6Str); };
+      box.appendChild(text);
+      box.appendChild(btn);
+      cell.appendChild(box);
+      return cell;
+    }
+
+    function createHoGLinkCell(hogId, graph6) {
+      const cell = document.createElement("td");
+      if (hogId !== -1) {
+        const link = document.createElement("a");
+        link.href = `https://houseofgraphs.org/graphs/${hogId}`;
+        link.target = "_blank";
+        link.textContent = `https://houseofgraphs.org/graphs/${hogId}`;
+        cell.appendChild(link);
+      } else {
+        cell.textContent = "Not found on HoG. Add/Edit via this "
+        const link = document.createElement("a");
+        const encodedGraph6 = encodeURIComponent(graph6);
+        link.href = `https://houseofgraphs.org/draw_graph/?g6=${encodedGraph6}`;
+        link.target = "_blank";
+        link.textContent = `link`;
+        cell.appendChild(link);
+      }
+      return cell;
+    }
+
+    function createImage(imgData) {
+      const img = document.createElement("img");
+      img.src = `data:image/png;base64,${imgData}`;
+      img.style.display = "none";
+      return img;
+    }
+
+    // Function to send PDF file to the backend
+    function sendPDFToBackend(file) {
+      hideElement(elements.startingContainer);
+      showElement(elements.loaderContainer);
+      elements.loadingMsg.textContent = `${file.name} is being processed. This might take a while...`;
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      fetch(`${URL}/upload`, {
+        method: "POST",
+        body: formData,
+      })
+        .then(response => response.json())
+        .then(handleBackendResponse)
+        .catch(error => console.error("Error:", error));
+    }
+
+    function handleBackendResponse(data) {
+      showElements([
+        elements.resultContainer
+      ]);
+      hideElement(elements.loaderContainer);
+
+      setTimeout(() => renderGraph(data), 0);
+    }
+
+    function reloadPage() {
+      clearContainers();
+      showElement(elements.startingContainer);
+      hideElement(elements.resultContainer);
+    }
+
+    function showGraph(index) {
+      [svgElements, imgElements, captions, graph6].forEach(elementArray => {
+        elementArray.forEach((el, i) => {
+          if (el instanceof HTMLTableElement) {
+            el.style.display = i === index ? "table" : "none";
+            return;
+          } else {
+            el.style.display = i === index ? "flex" : "none";
+          }
+        });
+      });
+
+    }
+
+    function navigateGraph(direction) {
+      const newIndex = currentGraphIndex + direction;
+      if (newIndex >= 0 && newIndex < svgElements.length) {
+        currentGraphIndex = newIndex;
+        showGraph(currentGraphIndex);
+        elements.currentIndex.textContent = `${svgElements.length == 0 ? 0 : currentGraphIndex + 1}`.padStart(2, "0") + "/" + `${svgElements.length}`.padStart(2, "0");
+      }
+    }
+
+    function handleKeyNavigation(event) {
+      if (event.key === "ArrowLeft") navigateGraph(-1);
+      else if (event.key === "ArrowRight") navigateGraph(1);
+    }
+
+    function clearContainers() {
+      [elements.graphWrapper, elements.pdfWrapper, elements.caption, elements.graph6Wrapper].forEach(el => {
+        el.innerHTML = "";
+      });
+      [svgElements, imgElements, captions, graph6].forEach(arr => arr.length = 0);
+    }
+
+    function showElement(element) {
+      element.style.display = "flex";
+    }
+
+    function hideElement(element) {
+      element.style.display = "none";
+    }
+
+    function showElements(elements) {
+      elements.forEach(showElement);
+    }
+
+    function hideElements(elements) {
+      elements.forEach(hideElement);
+    }
+
+    function checkFile(file) {
+      if (file.type !== "application/pdf") {
+        alert("Please upload a PDF file!");
+        return false;
+      }
+      //  check extension
+      const allowedExtensions = /(\.pdf)$/i;
+      if (!allowedExtensions.exec(file.name)) {
+        alert("Please upload a PDF file!");
+        return false;
+      }
+      // check file size
+      if (file.size > 25 * 1024 * 1024) {
+        alert("File is too large! Please upload a file smaller than 10MB.");
+        return false;
+      }
+
+      return true;
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      elements.pdfDropzone.addEventListener("click", () => elements.fileInput.click());
+
+      elements.fileInput.addEventListener("change", (e) => {
+        if (elements.fileInput.files.length) {
+          // check if file is a PDF
+          if (!checkFile(elements.fileInput.files[0]))
+            return;
+          sendPDFToBackend(elements.fileInput.files[0]);
+        }
+      });
+
+      elements.pdfDropzone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        elements.pdfDropzone.classList.add("drop-zone--over");
+      });
+
+      elements.pdfDropzone.addEventListener("dragleave", () => {
+        elements.pdfDropzone.classList.remove("drop-zone--over");
+      });
+
+      elements.pdfDropzone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        elements.pdfDropzone.classList.remove("drop-zone--over");
+
+        if (e.dataTransfer.files.length) {
+          // check if file is a PDF
+          if (!checkFile(e.dataTransfer.files[0]))
+            return;
+          sendPDFToBackend(e.dataTransfer.files[0]);
+        }
+      });
+    });
+  </script>
+
+</body>
+
+</html>
