@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 Julius Deynet <jdeynet@googlemail.com>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 from typing import List, Optional, Any
 import numpy as np
 import sys

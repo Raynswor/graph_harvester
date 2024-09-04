@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2024 Julius Deynet <jdeynet@googlemail.com>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 import pygame
 
 from geometry_objects import *
