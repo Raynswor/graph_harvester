@@ -714,7 +714,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
       } else {
         cell.textContent = "Not found on HoG. Add/Edit via this "
         const link = document.createElement("a");
-        const encodedGraph6 = encodeURIComponent(graph6);
+        const encodedGraph6 = encodeURIComponent(graph6.replace(">>graph6<<", ""));
         link.href = `https://houseofgraphs.org/draw_graph/?g6=${encodedGraph6}`;
         link.target = "_blank";
         link.textContent = `link`;

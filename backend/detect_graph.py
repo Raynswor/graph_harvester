@@ -138,7 +138,7 @@ def harvest_graph(file_path, gui=False, server_mode=True):
             lines += lines_from_rects
 
             mimic_rects_as_circles = lambda rect: Circle(
-                rect.width / 2,
+                min(rect.width, rect.height) / 2,
                 (rect.topLeft[0] + rect.width / 2, rect.topLeft[1] + rect.height / 2),
                 False,
             )
@@ -187,29 +187,18 @@ def harvest_graph(file_path, gui=False, server_mode=True):
                     total_num_graphs += 1
                     continue
 
-                adjustence_matrix = np.zeros((len(circles), len(circles)), dtype=bool)
-
                 # Detect edges from lines
                 edges = detect_edges_from_lines(circles, lines, edges)
 
                 edges = detect_edges_from_beziers(circles, beziers, lines, edges)
 
-                adjustence_matrix = create_matrix(circles, edges)
+                adjacency_matrix = create_matrix(circles, edges)
 
-                circles_copy = circles.copy()
+                graphs = compute_subgraphs(adjacency_matrix)
 
-                matrix_without_copies = create_matrix(circles_copy, edges)
-
-                graphs = compute_subgraphs(matrix_without_copies)
-
-                num_graphs = len(graphs)
-
-                old_size = len(graphs)
                 graphs = [graph for graph in graphs if graph.shape[0] > 6]
 
                 graphs = [graph for graph in graphs if max_node_degree(graph) > 2]
-
-                num_interesting_graphs = len(graphs)
 
                 # print(
                 #     "Number of graphs filtered out based on size:",
@@ -232,8 +221,6 @@ def harvest_graph(file_path, gui=False, server_mode=True):
                         len(graphs),
                         "graphs exist in Figure",
                     )
-                # NOTE: apparently not needed?
-                # num_graphs_in_hog = sum(map(lambda x: get_hog_id(x) != None, graphs))
 
                 graph6_strings = [
                     nx.to_graph6_bytes(nx.from_numpy_array(graph))
