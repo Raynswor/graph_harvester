@@ -11,9 +11,9 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 ## Overview
 
-Graph Harvester is a programm that extracts graphs from drawings of graphs in PDF files. We focus on the problem of extracting graphs from vector data, which is the primary format used in publications nowadays. 
+Graph Harvester is a program that extracts graphs from drawings of graphs in PDF files. We focus on the problem of extracting graphs from vector data, which is the primary format used in publications nowadays. 
 
-The programm can be accessed via [https://go.uniwue.de/graph-harvester](https://go.uniwue.de/graph-harvester).
+The program can be accessed via [https://go.uniwue.de/graph-harvester](https://go.uniwue.de/graph-harvester).
 
 ## Motivation
 
