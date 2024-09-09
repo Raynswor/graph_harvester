@@ -111,14 +111,14 @@ class TestUtil(unittest.TestCase):
 
         self.assertTrue(len(beziers) == 0)
 
-    def test_circle_containing_point(self):
+    def test_get_circle_containing_point(self):
         circles = [Circle(1, (1, 1))]
 
-        self.assertEqual(circle_containing_point(circles, (1, 1)), circles[0])
+        self.assertEqual(get_circle_containing_point(circles, (1, 1)), circles[0])
 
-        self.assertEqual(circle_containing_point(circles, (2, 2)), circles[0])
+        self.assertEqual(get_circle_containing_point(circles, (2, 2)), circles[0])
 
-        self.assertEqual(circle_containing_point(circles, (3, 3)), None)
+        self.assertEqual(get_circle_containing_point(circles, (3, 3)), None)
 
     def test_circles_on_line(self):
         circles = [
@@ -134,6 +134,11 @@ class TestUtil(unittest.TestCase):
 
         line = Line((4, 0), (6, 0))
         self.assertEqual(circles_on_line(circles, line), [])
+
+        # Circles right next to line should not be detected, only the ones that intersect
+        circles = [Circle(0.1, (1, 1)), Circle(0.1, (1, 3)), Circle(0.1, (1.11, 2))]
+        line = Line((1, 1), (1, 3))
+        self.assertEqual(circles_on_line(circles, line), [circles[0], circles[1]])
 
     def test_circles_on_bezier(self):
         circles = [
@@ -277,7 +282,9 @@ class TestUtil(unittest.TestCase):
             Circle(1, (5, 5)),
             Circle(0.5, (1, 1), True, [dummy_bezier]),
         ]
-        filtered_circles, regained_beziers = filter_circles_based_on_size(circles)
+        filtered_circles, regained_beziers = filter_circles_based_on_peak_size(
+            circles, [], []
+        )
         self.assertEqual(filtered_circles, circles[:3])
 
         self.assertEqual(regained_beziers, [dummy_bezier])

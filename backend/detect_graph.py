@@ -124,8 +124,13 @@ def harvest_graph(file_path, gui=False, server_mode=True):
             num_figure += 1
 
             lines, rects, quads, beziers, labels = extract_gemetric_elements(
-                figure["objs"]
+                figure["objs"], ignore_rect_without_color=True
             )
+
+            if len(rects) == 0 and len(quads) == 0:
+                _, rects, quads, _, _ = extract_gemetric_elements(
+                    figure["objs"], ignore_rect_without_color=False
+                )
 
             circles, beziers = detect_circles_from_beziers(beziers)
 
@@ -143,11 +148,13 @@ def harvest_graph(file_path, gui=False, server_mode=True):
                 False,
             )
 
-            circles += map(mimic_rects_as_circles, rects)
+            circles += map(mimic_rects_as_circles, rects + quads)
 
             old_size = len(circles)
             # Filter out circles that are irregular in size
-            circles, regained_beziers = filter_circles_based_on_size(circles)
+            circles, regained_beziers = filter_circles_based_on_peak_size(
+                circles, lines, beziers
+            )
 
             beziers += regained_beziers
 
@@ -192,9 +199,9 @@ def harvest_graph(file_path, gui=False, server_mode=True):
 
                 edges = detect_edges_from_beziers(circles, beziers, lines, edges)
 
-                adjacency_matrix = create_matrix(circles, edges)
+                adjustence_matrix = create_matrix(circles, edges)
 
-                graphs = compute_subgraphs(adjacency_matrix)
+                graphs = compute_subgraphs(adjustence_matrix)
 
                 graphs = [graph for graph in graphs if graph.shape[0] > 6]
 
@@ -212,7 +219,7 @@ def harvest_graph(file_path, gui=False, server_mode=True):
                         "graphs containing",
                         np.sum([graph.shape[0] for graph in graphs]),
                         "vertices in figure",
-                        # figures["caption"],
+                        figure["caption"],
                         "detected. Index:",
                         num_figure,
                     )

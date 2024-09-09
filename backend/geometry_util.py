@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Union
 import numpy as np
 import sys
 import math
@@ -10,6 +10,8 @@ from nptyping import NDArray
 from nptyping.typing_ import Bool
 
 from geometry_objects import *
+
+import logging
 
 
 # Percentage a line can be outside of a vertex to still be counted as connected
@@ -25,19 +27,21 @@ KEEP_VERTEX_THESHOLD = 0.3
 # TODO: this should be a dynamic value/percentage
 MAX_DISTANCE_FOR_LABEL = 15
 
-# Max percentage the two diameters of a circle (given by their PDF representation)
+# Max percentage the two radii of a circle (given by their PDF representation)
 # can differ to still be counted as a circle
 CIRCLE_THRESHOLD = 0.2
 
 
 def extract_gemetric_elements(
-    objs: dict,
+    objs: dict, ignore_rect_without_color=True
 ) -> tuple[List[Line], List[Rect], List[Rect], List[Bezier], List[Label]]:
     lines: List[Line] = []
     rects: List[Rect] = []
     quads: List[Rect] = []
     beziers: List[Bezier] = []
     labels: List[Label] = []
+
+    logger = logging.getLogger("main")
 
     unknown = set(
         filter(
@@ -74,6 +78,12 @@ def extract_gemetric_elements(
             width = obj["pts"][2] - obj["pts"][0]
             height = obj["pts"][3] - obj["pts"][1]
             filled = obj["draw"]["type"] == "f"
+
+            if ignore_rect_without_color and "color" not in obj["draw"].keys():
+                # For some rects, this indicates their invisible
+                logger.warning("No color in DrawnRectangle")
+                i += 1
+                continue
             # If width and height differ too much, it is not a rectangle e.g. not a vertex
             if (
                 width == 0
@@ -157,7 +167,93 @@ def lays_within_distance(
     return (point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2 <= distance**2
 
 
-def filter_circles_based_on_size(
+def num_elements_starting_in_circle(
+    circle: Circle, elements: List[Union[Line, Bezier]]
+) -> int:
+    count = 0
+    for element in elements:
+        if circle_contains_point(circle, element.start) and not circle_contains_point(
+            circle, element.stop
+        ):
+            count += 1
+        if circle_contains_point(circle, element.stop) and not circle_contains_point(
+            circle, element.start
+        ):
+            count += 1
+    return count
+
+
+def filter_circles_based_on_peak_size(
+    circles: List[Circle], lines: List[Line], beziers: List[Bezier]
+) -> tuple[List[Circle], List[Bezier]]:
+    if len(circles) < 10:
+        return filter_circles_based_on_avg_size(circles)
+
+    min_count = 5
+
+    radius_groups = []
+
+    for circle in circles:
+        radius_found = False
+        for group in radius_groups:
+            average = np.mean([circle.radius for circle in group])
+            # Group circles with similar radii (within tolerance)
+            if abs(average - circle.radius) <= average * KEEP_VERTEX_THESHOLD:
+                group.append(circle)
+                radius_found = True
+                break
+        if not radius_found:
+            radius_groups.append([circle])
+
+    # Filter groups with fewer than min_count circles
+    filtered_circles = []
+    further_candidates = []
+    regained_beziers = []
+    for group in radius_groups:
+        if len(group) < min_count:
+            further_candidates.extend(group)
+            continue
+
+        centers_excluding = [circle.center for circle in circles if circle not in group]
+        avg_excluding = np.mean(
+            [circle.radius for circle in circles if circle not in group]
+        )
+        isBigger = np.mean([circle.radius for circle in group]) / avg_excluding >= 3
+        if isBigger:
+            # Inefficient, but should not be rached often
+            for circle in group:
+                containsCircles = any(
+                    circle_contains_point(circle, center)
+                    for center in centers_excluding
+                )
+                if not containsCircles:
+                    filtered_circles.append(circle)
+                else:
+                    regained_beziers.extend(circle.original_beziers)
+        else:
+            filtered_circles.extend(group)
+
+    # Important vertices my be bigger and smaller in number
+    for circle in further_candidates:
+        # Check if candidate contains any other circles and edge candidates start in it
+        if (
+            not any(
+                circle_contains_point(circle, filtered_circle.center)
+                for filtered_circle in filtered_circles
+            )
+            and num_elements_starting_in_circle(circle, lines + beziers) >= 3
+        ):
+            filtered_circles.append(circle)
+        else:
+            regained_beziers.extend(
+                [bezier for circle in group for bezier in circle.original_beziers]
+            )
+
+    # Step 6: Return the filtered list of circles
+    return filtered_circles, regained_beziers
+
+
+def filter_circles_based_on_avg_size(
     circles: List[Circle],
 ) -> tuple[List[Circle], List[Bezier]]:
     average_radius = np.mean([circle.radius for circle in circles])
@@ -200,19 +296,23 @@ def filter_duplicate_circles(circles: List[Circle]) -> List[Circle]:
     return [circle for circle in circles if circle not in to_remove]
 
 
-def circle_containing_point(
+def circle_contains_point(circle: Circle, point: tuple[int, int]) -> bool:
+    max_distance = circle.radius * (1 + OVERLAPPING_TOLERANCE)
+    if (
+        abs(circle.center[0] - point[0]) > max_distance
+        or abs(circle.center[1] - point[1]) > max_distance
+    ):
+        return False
+
+    return lays_within_distance(circle.center, point, max_distance)
+
+
+def get_circle_containing_point(
     circles: List[Circle], point: tuple[int, int]
 ) -> Optional[Circle]:
     # TODO: This can be optimized by using binary search
     for circle in circles:
-        max_distance = circle.radius * (1 + OVERLAPPING_TOLERANCE)
-        if (
-            abs(circle.center[0] - point[0]) > max_distance
-            or abs(circle.center[1] - point[1]) > max_distance
-        ):
-            continue
-
-        if lays_within_distance(circle.center, point, max_distance):
+        if circle_contains_point(circle, point):
             return circle
 
     return None
@@ -250,7 +350,7 @@ def circles_on_line(circles: List[Circle], line: Line) -> List[Circle]:
     for circle in circles:
         center = np.array(circle.center)
         distance_to_line = distance_circle_to_line(circle, line)
-        if distance_to_line <= circle.radius * (1 + OVERLAPPING_TOLERANCE):
+        if distance_to_line <= circle.radius:
             distance_start_squared = np.sum((center - line_start) ** 2)
             circles_on_line.append(circle)
             distances_squared.append(distance_start_squared)
@@ -266,7 +366,7 @@ def circles_on_bezier(circles: List[Circle], bezier: Bezier) -> List[Circle]:
         j = 0
         for circle in circles:
             j += 1
-            max_distance = circle.radius * (1 + OVERLAPPING_TOLERANCE)
+            max_distance = circle.radius
             if (
                 abs(circle.center[0] - point[0]) > max_distance
                 or abs(circle.center[1] - point[1]) > max_distance
@@ -286,7 +386,8 @@ def detect_edges_from_lines(
     circles: List[Circle], lines: List[Line], edges: List[Edge] = []
 ) -> List[Edge]:
     for line in lines:
-        begin = circle_containing_point(circles, line.start)
+        k = lines.index(line)
+        begin = get_circle_containing_point(circles, line.start)
         path = [line]
 
         while not begin:
@@ -294,7 +395,8 @@ def detect_edges_from_lines(
                 path[0].start, [line for line in lines if line not in path]
             )
             if additionalLine:
-                begin = circle_containing_point(circles, new_begin)
+                j = lines.index(additionalLine)
+                begin = get_circle_containing_point(circles, new_begin)
                 path.insert(0, additionalLine)
             else:
                 break
@@ -302,13 +404,13 @@ def detect_edges_from_lines(
         if not begin:
             continue
 
-        end = circle_containing_point(circles, line.stop)
+        end = get_circle_containing_point(circles, line.stop)
 
         while not end:
             new_end, additionalLine = try_extending_point_by_line(
                 path[-1].stop, [line for line in lines if line not in path]
             )
-            end = circle_containing_point(circles, new_end)
+            end = get_circle_containing_point(circles, new_end)
             if additionalLine:
                 path.append(additionalLine)
             else:
@@ -390,14 +492,14 @@ def detect_edges_from_beziers(
     for bezier in beziers:
         k = beziers.index(bezier)
         path = [bezier]  # List of beziers/lines that connect begin to end
-        begin = circle_containing_point(circles, bezier.start)
+        begin = get_circle_containing_point(circles, bezier.start)
 
         while not begin:
             new_begin, additionalBezier = try_extending_point_by_bezier(
                 path[0].start, [bezier for bezier in beziers if bezier not in path]
             )
             if additionalBezier:
-                begin = circle_containing_point(circles, new_begin)
+                begin = get_circle_containing_point(circles, new_begin)
                 path.insert(0, additionalBezier)
 
             if not begin:
@@ -405,7 +507,7 @@ def detect_edges_from_beziers(
                     path[0].start, [line for line in lines if line not in path]
                 )
                 if additionalLine:
-                    begin = circle_containing_point(circles, new_begin)
+                    begin = get_circle_containing_point(circles, new_begin)
                     path.insert(0, additionalLine)
                 else:
                     break
@@ -414,14 +516,14 @@ def detect_edges_from_beziers(
         if begin is None:
             continue
 
-        end = circle_containing_point(circles, bezier.stop)
+        end = get_circle_containing_point(circles, bezier.stop)
 
         while not end:
             new_end, additionalBezier = try_extending_point_by_bezier(
                 path[-1].stop, [bezier for bezier in beziers if bezier not in path]
             )
             if additionalBezier:
-                end = circle_containing_point(circles, new_end)
+                end = get_circle_containing_point(circles, new_end)
                 path.append(additionalBezier)
                 continue
             if not end:
@@ -429,7 +531,7 @@ def detect_edges_from_beziers(
                     path[-1].stop, [line for line in lines if line not in path]
                 )
                 if additionalLine:
-                    end = circle_containing_point(circles, new_end)
+                    end = get_circle_containing_point(circles, new_end)
                     path.append(additionalLine)
                 else:
                     break
@@ -471,12 +573,16 @@ def try_converting_rect_to_lines(
             continue
 
         if (
-            circle_containing_point(circles, rect.topLeft) is not None
-            and circle_containing_point(circles, (rect.topLeft[0], rect.bottomRight[1]))
+            get_circle_containing_point(circles, rect.topLeft) is not None
+            and get_circle_containing_point(
+                circles, (rect.topLeft[0], rect.bottomRight[1])
+            )
             is not None
-            and circle_containing_point(circles, (rect.bottomRight[0], rect.topLeft[1]))
+            and get_circle_containing_point(
+                circles, (rect.bottomRight[0], rect.topLeft[1])
+            )
             is not None
-            and circle_containing_point(circles, rect.bottomRight) is not None
+            and get_circle_containing_point(circles, rect.bottomRight) is not None
         ):
             toReturn.append(Line(rect.topLeft, (rect.topLeft[0], rect.bottomRight[1])))
             toReturn.append(Line(rect.topLeft, (rect.bottomRight[0], rect.topLeft[1])))
