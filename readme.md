@@ -50,9 +50,7 @@ Currently, parts of the pipeline are closed-source and therefore the only way to
 
 
 [^1]: Michael A. Bekos, Walter Didimo, Giuseppe Liotta, Saeed Mehrabi, and Fabrizio Montecchiani.
-On RAC drawings of 1-planar graphs. Theoret. Comput. Sci., 689:48–57, 2017. doi:10.1016/
-j.tcs.2017.05.039.
+On RAC drawings of 1-planar graphs. Theoret. Comput. Sci., 689:48–57, 2017. doi:[10.1016/j.tcs.2017.05.039](https://dx.doi.org/10.1016/j.tcs.2017.05.039).
 
 [^2]: Kris Coolsaet, Sven D’hondt, and Jan Goedgebeur. House of Graphs 2.0: A database of
-interesting graphs and more. Discret. Appl. Math., 325:97–107, 2023. doi:10.1016/J.DAM.
-2022.10.013.
+interesting graphs and more. Discret. Appl. Math., 325:97–107, 2023. doi:[10.1016/J.DAM.2022.10.013](https://dx.doi.org/10.1016/J.DAM.2022.10.013).
