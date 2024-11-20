@@ -1,8 +1,11 @@
 # SPDX-FileCopyrightText: 2024 Julius Deynet <jdeynet@googlemail.com>
+# SPDX-FileCopyrightText: 2024 Sebastian Kempf <sebastian.kempf@uni-wuerzburg.de>
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from typing import List
+
+import math
+from typing import List, Union
 
 
 # Taken from http://www.pygame.org/wiki/BezierCurve
@@ -82,8 +85,15 @@ class Circle:
         self.draw = draw
         self.used = False
         self.original_beziers = original_beziers
+        self.area = self.radius**2 * math.pi
+        self.index = None
+
+        self.x = center[0]
+        self.y = center[1]
 
     def __eq__(self, __value) -> bool:
+        if not isinstance(__value, Circle):
+            return False
         return self.radius == __value.radius and self.center == __value.center
 
     def __str__(self) -> str:
@@ -96,7 +106,11 @@ class Circle:
         return hash((self.radius, self.center))
 
     def __dict__(self):
-        return {"radius": self.radius, "center": toDict(self.center)}
+        return {
+            "r": self.radius,
+            "c": toDict(self.center),
+            "i": self.index,
+        }
 
 
 class Line:
@@ -115,22 +129,57 @@ class Line:
         return str(self)
 
     def __dict__(self):
-        return {"start": toDict(self.start), "stop": toDict(self.stop)}
+        return {
+            "start": toDict(self.start),
+            "end": toDict(self.stop),
+        }
 
 
 class Rect:
-    def __init__(self, topLeft, bottomRight, filled) -> None:
+    def __init__(self, topLeft, bottomRight, filled=True) -> None:
         self.topLeft = topLeft
         self.bottomRight = bottomRight
         self.width = bottomRight[0] - topLeft[0]
         self.height = bottomRight[1] - topLeft[1]
         self.filled = filled
+        self.used = False
+        self.area = self.width * self.height
+        self.center = (topLeft[0] + self.width / 2, topLeft[1] + self.height / 2)
+        self.index = None
+
+        self.x1 = topLeft[0]
+        self.y1 = topLeft[1]
+        self.x2 = bottomRight[0]
+        self.y2 = bottomRight[1]
 
     def __str__(self) -> str:
         return f"Rect(topLeft={self.topLeft}, bottomRight={self.bottomRight})"
 
     def __repr__(self) -> str:
         return str(self)
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, Rect):
+            return False
+        return self.topLeft == value.topLeft and self.bottomRight == value.bottomRight
+
+    def __hash__(self) -> int:
+        return hash((self.topLeft, self.bottomRight))
+
+    def __dict__(self):
+        return {
+            "topLeft": toDict(self.topLeft),
+            "bottomRight": toDict(self.bottomRight),
+            "i": self.index,
+        }
+
+    def get_lines(self):
+        return [
+            Line(self.topLeft, (self.bottomRight[0], self.topLeft[1])),
+            Line(self.topLeft, (self.topLeft[0], self.bottomRight[1])),
+            Line((self.bottomRight[0], self.topLeft[1]), self.bottomRight),
+            Line((self.topLeft[0], self.bottomRight[1]), self.bottomRight),
+        ]
 
 
 class Bezier:
@@ -153,12 +202,15 @@ class Bezier:
             "start": toDict(self.start),
             "p1": toDict(self.p1),
             "p2": toDict(self.p2),
-            "stop": toDict(self.stop),
+            "end": toDict(self.stop),
         }
 
 
+Vertex = Union[Circle, Rect]
+
+
 class Edge:
-    def __init__(self, start: Circle, stop: Circle) -> None:
+    def __init__(self, start: Vertex, stop: Vertex) -> None:
         self.start = start
         self.stop = stop
 

@@ -1,0 +1,7 @@
+.vscode
+.venv
+backend/uploads/*
+*__pycache__*
+.gitlab-ci.yml
+venv
+**/node_modules/**

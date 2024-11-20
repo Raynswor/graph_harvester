@@ -1,18 +1,17 @@
 # SPDX-FileCopyrightText: 2024 Julius Deynet <jdeynet@googlemail.com>
+# SPDX-FileCopyrightText: 2024 Sebastian Kempf <sebastian.kempf@uni-wuerzburg.de>
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-from typing import List, Optional, Any, Union
-import numpy as np
-import sys
+
 import math
+import sys
+from typing import Any, List, Optional, Union
+
+import numpy as np
+from geometry_objects import Bezier, Circle, Edge, Label, Line, Rect, Vertex
 from nptyping import NDArray
 from nptyping.typing_ import Bool
-
-from geometry_objects import *
-
-import logging
-
 
 # Percentage a line can be outside of a vertex to still be counted as connected
 OVERLAPPING_TOLERANCE = 0.5
@@ -41,7 +40,7 @@ def extract_gemetric_elements(
     beziers: List[Bezier] = []
     labels: List[Label] = []
 
-    logger = logging.getLogger("main")
+    # logger = logging.getLogger("main")
 
     unknown = set(
         filter(
@@ -81,7 +80,7 @@ def extract_gemetric_elements(
 
             if ignore_rect_without_color and "color" not in obj["draw"].keys():
                 # For some rects, this indicates their invisible
-                logger.warning("No color in DrawnRectangle")
+                # logger.warning("No color in DrawnRectangle")
                 i += 1
                 continue
             # If width and height differ too much, it is not a rectangle e.g. not a vertex
@@ -183,117 +182,138 @@ def num_elements_starting_in_circle(
     return count
 
 
-def filter_circles_based_on_peak_size(
-    circles: List[Circle], lines: List[Line], beziers: List[Bezier]
-) -> tuple[List[Circle], List[Bezier]]:
-    if len(circles) < 10:
-        return filter_circles_based_on_avg_size(circles)
+def num_elements_starting_in_rect(
+    rect: Rect, elements: List[Union[Line, Bezier]]
+) -> int:
+    count = 0
+    for element in elements:
+        if rect_contains_point(rect, element.start) and not rect_contains_point(
+            rect, element.stop
+        ):
+            count += 1
+        if rect_contains_point(rect, element.stop) and not rect_contains_point(
+            rect, element.start
+        ):
+            count += 1
+    return count
+
+
+def filter_vertices_based_on_peak_size(
+    vertices: List[Vertex], lines: List[Line], beziers: List[Bezier]
+) -> tuple[List[Vertex], List[Bezier], List[Line]]:
+    if len(vertices) < 10:
+        return filter_vertices_based_on_avg_size(vertices)
 
     min_count = 5
 
-    radius_groups = []
+    area_groups = []
 
-    for circle in circles:
-        radius_found = False
-        for group in radius_groups:
-            average = np.mean([circle.radius for circle in group])
-            # Group circles with similar radii (within tolerance)
-            if abs(average - circle.radius) <= average * KEEP_VERTEX_THESHOLD:
-                group.append(circle)
-                radius_found = True
+    for vertex in vertices:
+        area_found = False
+        for group in area_groups:
+            average = np.mean([v.area for v in group])
+            # Group vertices with similar radii (within tolerance)
+            if abs(average - vertex.area) <= average * KEEP_VERTEX_THESHOLD:
+                group.append(vertex)
+                area_found = True
                 break
-        if not radius_found:
-            radius_groups.append([circle])
+        if not area_found:
+            area_groups.append([vertex])
 
     # Filter groups with fewer than min_count circles
-    filtered_circles = []
+    filtered_vertices = []
     further_candidates = []
     regained_beziers = []
-    for group in radius_groups:
+    regained_lines = []
+    for group in area_groups:
         if len(group) < min_count:
             further_candidates.extend(group)
             continue
 
-        centers_excluding = [circle.center for circle in circles if circle not in group]
+        centers_excluding = [
+            vertex.center for vertex in vertices if vertex not in group
+        ]
         avg_excluding = np.mean(
-            [circle.radius for circle in circles if circle not in group]
+            [vertex.area for vertex in vertices if vertex not in group]
         )
-        isBigger = np.mean([circle.radius for circle in group]) / avg_excluding >= 3
+        isBigger = np.mean([vertex.area for vertex in group]) / avg_excluding >= 3
         if isBigger:
             # Inefficient, but should not be rached often
-            for circle in group:
-                containsCircles = any(
-                    circle_contains_point(circle, center)
-                    for center in centers_excluding
-                )
-                if not containsCircles:
-                    filtered_circles.append(circle)
+            for vertex in group:
+                if isinstance(vertex, Circle):
+                    containsVertex = any(
+                        circle_contains_point(vertex, center)
+                        for center in centers_excluding
+                    )
+                    if not containsVertex:
+                        filtered_vertices.append(vertex)
+                    else:
+                        regained_beziers.extend(vertex.original_beziers)
                 else:
-                    regained_beziers.extend(circle.original_beziers)
+                    containsVertex = any(
+                        rect_contains_point(vertex, center)
+                        for center in centers_excluding
+                    )
+                    if not containsVertex:
+                        filtered_vertices.append(vertex)
+                    else:
+                        regained_lines.extend(vertex.get_lines())
         else:
-            filtered_circles.extend(group)
+            filtered_vertices.extend(group)
 
     # Important vertices my be bigger and smaller in number
-    for circle in further_candidates:
+    for vertex in further_candidates:
         # Check if candidate contains any other circles and edge candidates start in it
-        if (
-            not any(
-                circle_contains_point(circle, filtered_circle.center)
-                for filtered_circle in filtered_circles
-            )
-            and num_elements_starting_in_circle(circle, lines + beziers) >= 3
-        ):
-            filtered_circles.append(circle)
+        if isinstance(vertex, Circle):
+            circle = vertex
+            if (
+                not any(
+                    circle_contains_point(circle, filtered_vertex.center)
+                    for filtered_vertex in filtered_vertices
+                )
+                and num_elements_starting_in_circle(circle, lines + beziers) >= 3
+            ):
+                filtered_vertices.append(circle)
+            else:
+                regained_beziers.extend(circle.original_beziers)
         else:
-            regained_beziers.extend(
-                [bezier for circle in group for bezier in circle.original_beziers]
-            )
+            rect = vertex
+            if (
+                not any(
+                    rect_contains_point(rect, filtered_vertex.center)
+                    for filtered_vertex in filtered_vertices
+                )
+                and num_elements_starting_in_rect(rect, lines + beziers) >= 3
+            ):
+                filtered_vertices.append(rect)
+            else:
+                regained_lines.extend(rect.get_lines())
 
     # Step 6: Return the filtered list of circles
-    return filtered_circles, regained_beziers
+    return filtered_vertices, regained_beziers, regained_lines
 
 
-def filter_circles_based_on_avg_size(
-    circles: List[Circle],
-) -> tuple[List[Circle], List[Bezier]]:
-    average_radius = np.mean([circle.radius for circle in circles])
-    filtered_circles = []
+def filter_vertices_based_on_avg_size(
+    vertices: List[Vertex],
+) -> tuple[List[Vertex], List[Bezier], List[Line]]:
+    average_area = np.mean([vertex.area for vertex in vertices])
+    filtered_vertices = []
     regained_beziers = []
-    for circle in circles:
+    regained_lines = []
+    for vertex in vertices:
         if (
-            circle.radius < (1 + KEEP_VERTEX_THESHOLD) * average_radius
-            and circle.radius > (1 - KEEP_VERTEX_THESHOLD) * average_radius
+            vertex.area < (1 + KEEP_VERTEX_THESHOLD) * average_area
+            and vertex.area > (1 - KEEP_VERTEX_THESHOLD) * average_area
         ):
-            filtered_circles.append(circle)
+            filtered_vertices.append(vertex)
         else:
-            # If circle is too big or too small, regain the beziers as they may be edges
-            regained_beziers.extend(circle.original_beziers)
+            # If vertex is too big or too small, regain the components as they may be edges
+            if isinstance(vertex, Circle):
+                regained_beziers.extend(vertex.original_beziers)
+            if isinstance(vertex, Rect):
+                regained_lines.extend(vertex.get_lines())
 
-    return filtered_circles, regained_beziers
-
-
-def filter_duplicate_circles(circles: List[Circle]) -> List[Circle]:
-    to_remove = []
-    circles = list(dict.fromkeys(circles))  # Remove duplicates while perserving order
-    for i in range(len(circles)):
-        for j in range(i + 1, len(circles)):
-            circle1 = circles[i]
-            circle2 = circles[j]
-            if abs(circle1.center[0] - circle2.center[0]) > (
-                circle1.radius + circle2.radius
-            ) or abs(circle1.center[1] - circle2.center[1]) > (
-                circle1.radius + circle2.radius
-            ):
-                continue
-
-            if lays_within_distance(
-                circle1.center, circle2.center, circle1.radius + circle2.radius
-            ):
-                if circle1.radius >= circle2.radius:
-                    to_remove.append(circle2)
-                else:
-                    to_remove.append(circle1)
-    return [circle for circle in circles if circle not in to_remove]
+    return filtered_vertices, regained_beziers, regained_lines
 
 
 def circle_contains_point(circle: Circle, point: tuple[int, int]) -> bool:
@@ -307,87 +327,201 @@ def circle_contains_point(circle: Circle, point: tuple[int, int]) -> bool:
     return lays_within_distance(circle.center, point, max_distance)
 
 
-def get_circle_containing_point(
-    circles: List[Circle], point: tuple[int, int]
-) -> Optional[Circle]:
+def rect_contains_point(rect: Rect, point: tuple[int, int]) -> bool:
+    max_width_distance_tolerance = rect.width * OVERLAPPING_TOLERANCE
+    max_height_distance_tolerance = rect.height * OVERLAPPING_TOLERANCE
+
+    return (
+        rect.topLeft[0] - max_width_distance_tolerance
+        <= point[0]
+        <= rect.bottomRight[0] + max_width_distance_tolerance
+        and rect.topLeft[1] - max_height_distance_tolerance
+        <= point[1]
+        <= rect.bottomRight[1] + max_height_distance_tolerance
+    )
+
+
+def filter_duplicate_vertices(vertices: List[Vertex]) -> List[Vertex]:
+    to_remove = []
+    vertices = list(dict.fromkeys(vertices))  # Remove duplicates while perserving order
+    for i in range(len(vertices)):
+        for j in range(i + 1, len(vertices)):
+            vertex1 = vertices[i]
+            vertex2 = vertices[j]
+            if isinstance(vertex1, Circle) and isinstance(vertex2, Circle):
+                if lays_within_distance(
+                    vertex1.center, vertex2.center, vertex1.radius + vertex2.radius
+                ):
+                    if vertex1.radius >= vertex2.radius:
+                        to_remove.append(vertex2)
+                    else:
+                        to_remove.append(vertex1)
+            elif isinstance(vertex1, Rect) and isinstance(vertex2, Rect):
+                if (
+                    rect_contains_point(vertex1, vertex2.topLeft)
+                    or rect_contains_point(vertex1, vertex2.bottomRight)
+                    or rect_contains_point(
+                        vertex1, (vertex2.topLeft[0], vertex2.bottomRight[1])
+                    )
+                    or rect_contains_point(
+                        vertex1, (vertex2.bottomRight[0], vertex2.topLeft[1])
+                    )
+                ):
+                    if vertex1.area >= vertex2.area:
+                        to_remove.append(vertex2)
+                    else:
+                        to_remove.append(vertex1)
+            else:
+                circle = vertex1 if isinstance(vertex1, Circle) else vertex2
+                rect = vertex1 if isinstance(vertex1, Rect) else vertex2
+                if (
+                    circle_contains_point(circle, rect.topLeft)
+                    or circle_contains_point(circle, rect.bottomRight)
+                    or circle_contains_point(
+                        circle, (rect.topLeft[0], rect.bottomRight[1])
+                    )
+                    or circle_contains_point(
+                        circle, (rect.bottomRight[0], rect.topLeft[1])
+                    )
+                ):
+                    if vertex1.area >= vertex2.area:
+                        to_remove.append(vertex2)
+                    else:
+                        to_remove.append(vertex1)
+
+    return [vertex for vertex in vertices if vertex not in to_remove]
+
+
+def get_vertex_containing_point(
+    vertices: List[Vertex], point: tuple[int, int]
+) -> Optional[Vertex]:
     # TODO: This can be optimized by using binary search
-    for circle in circles:
-        if circle_contains_point(circle, point):
-            return circle
+    for vertex in vertices:
+        if isinstance(vertex, Circle) and circle_contains_point(vertex, point):
+            return vertex
+        if isinstance(vertex, Rect) and rect_contains_point(vertex, point):
+            return vertex
 
     return None
 
 
-def distance_circle_to_line(circle: Circle, line: Line) -> float:
-    x0, y0 = circle.center
+def distance_point_to_line(point: tuple[int, int], line: Line) -> float:
+    x0, y0 = point
     x1, y1 = line.start
     x2, y2 = line.stop
 
-    # Calculate the components of the line equation: ax + by + c = 0
+    # Calculate the components of the line equation: ax + by + c = 0 - Part 1
     a = y2 - y1
-    b = x1 - x2
-    c = (x2 * y1) - (x1 * y2)
-
-    # Calculate the distance using the formula: |ax0 + by0 + c| / sqrt(a^2 + b^2)
-    distance = abs((a * x0) + (b * y0) + c) / math.sqrt((a**2) + (b**2))
 
     # Check if the perpendicular projection of the point falls within the line segment
-    dot_product = (x0 - x1) * (x2 - x1) + (y0 - y1) * (y2 - y1)
+    dot_product = (x0 - x1) * (x2 - x1) + (y0 - y1) * a
     if dot_product < 0:
         return math.sqrt((x0 - x1) ** 2 + (y0 - y1) ** 2)
 
-    squared_length = (x2 - x1) ** 2 + (y2 - y1) ** 2
+    squared_length = (x2 - x1) ** 2 + a**2
     if dot_product > squared_length:
         return math.sqrt((x0 - x2) ** 2 + (y0 - y2) ** 2)
 
-    return distance
+    # Calculate the components of the line equation: ax + by + c = 0 - Part 2
+    b = x1 - x2
+    c = (x2 * y1) - (x1 * y2)
+    # Calculate the distance using the formula: |ax0 + by0 + c| / sqrt(a^2 + b^2)
+    return abs((a * x0) + (b * y0) + c) / math.sqrt((a**2) + (b**2))
 
 
-def circles_on_line(circles: List[Circle], line: Line) -> List[Circle]:
-    circles_on_line = []
+def line_intersects_rectangle(x1, y1, x2, y2, rect_x, rect_y, rect_width, rect_height):
+    ## liang-barsky algorithm
+    t0, t1 = 0, 1
+    dx = x2 - x1
+    dy = y2 - y1
+
+    # Check intersection with vertical edges
+    p = [-dx, dx, -dy, dy]
+    q = [x1 - rect_x, rect_x + rect_width - x1, y1 - rect_y, rect_y + rect_height - y1]
+
+    for i in range(4):
+        if p[i] == 0:
+            if q[i] < 0:
+                return False
+        else:
+            t = q[i] / p[i]
+            if p[i] < 0:
+                t0 = max(t0, t)
+            else:
+                t1 = min(t1, t)
+            if t0 > t1:
+                return False
+
+    return True
+
+
+def get_vertices_on_line(vertices: List[Vertex], line: Line) -> List[Vertex]:
+    vertices_on_line = []
     distances_squared = []
     line_start = np.array(line.start)
-    for circle in circles:
-        center = np.array(circle.center)
-        distance_to_line = distance_circle_to_line(circle, line)
-        if distance_to_line <= circle.radius:
-            distance_start_squared = np.sum((center - line_start) ** 2)
-            circles_on_line.append(circle)
-            distances_squared.append(distance_start_squared)
 
-    sorted_indices = np.argsort(distances_squared)
+    for vertex in vertices:
+        if isinstance(vertex, Circle):
+            circle = vertex
+            center = np.array(circle.center)
+            distance_to_line = distance_point_to_line(circle.center, line)
+            if distance_to_line <= circle.radius:
+                distance_start_squared = np.sum((center - line_start) ** 2)
+                vertices_on_line.append(circle)
+                distances_squared.append(distance_start_squared)
+        if isinstance(vertex, Rect):
+            rect = vertex
+            if line_intersects_rectangle(
+                *line.start, *line.stop, *rect.topLeft, rect.width, rect.height
+            ):
+                rect_center = np.array(
+                    [
+                        (rect.topLeft[0] + rect.bottomRight[0]) / 2,
+                        (rect.topLeft[1] + rect.bottomRight[1]) / 2,
+                    ]
+                )
+                distance_start_squared = np.sum(
+                    (np.array(rect_center) - line_start) ** 2
+                )
+                vertices_on_line.append(rect)
+                distances_squared.append(distance_start_squared)
 
-    return [circles_on_line[i] for i in sorted_indices]
+    return [vertices_on_line[i] for i in np.argsort(distances_squared)]
 
 
-def circles_on_bezier(circles: List[Circle], bezier: Bezier) -> List[Circle]:
-    circles_on_line = []
+def get_vertices_on_bezier(vertices: List[Vertex], bezier: Bezier) -> List[Vertex]:
+    vertices_on_line = []
     for point in bezier.points:
-        j = 0
-        for circle in circles:
-            j += 1
-            max_distance = circle.radius
-            if (
-                abs(circle.center[0] - point[0]) > max_distance
-                or abs(circle.center[1] - point[1]) > max_distance
-            ):
+        for vertex in vertices:
+            if vertex in vertices_on_line:
                 continue
+            if isinstance(vertex, Circle):
+                circle = vertex
+                max_distance = circle.radius
+                if (
+                    abs(circle.center[0] - point[0]) > max_distance
+                    or abs(circle.center[1] - point[1]) > max_distance
+                ):
+                    continue
 
-            if (
-                lays_within_distance(circle.center, point, max_distance)
-                and circle not in circles_on_line
-            ):
-                circles_on_line.append(circle)
+                if (
+                    lays_within_distance(circle.center, point, max_distance)
+                    and circle not in vertices_on_line
+                ):
+                    vertices_on_line.append(circle)
+            if isinstance(vertex, Rect):
+                rect = vertex
+                if rect_contains_point(rect, point) and rect not in vertices_on_line:
+                    vertices_on_line.append(rect)
 
-    return circles_on_line
+    return vertices_on_line
 
 
 def detect_edges_from_lines(
-    circles: List[Circle], lines: List[Line], edges: List[Edge] = []
+    vertices: List[Vertex], lines: List[Line], edges: List[Edge] = []
 ) -> List[Edge]:
     for line in lines:
-        k = lines.index(line)
-        begin = get_circle_containing_point(circles, line.start)
+        begin = get_vertex_containing_point(vertices, line.start)
         path = [line]
 
         while not begin:
@@ -395,8 +529,7 @@ def detect_edges_from_lines(
                 path[0].start, [line for line in lines if line not in path]
             )
             if additionalLine:
-                j = lines.index(additionalLine)
-                begin = get_circle_containing_point(circles, new_begin)
+                begin = get_vertex_containing_point(vertices, new_begin)
                 path.insert(0, additionalLine)
             else:
                 break
@@ -404,13 +537,13 @@ def detect_edges_from_lines(
         if not begin:
             continue
 
-        end = get_circle_containing_point(circles, line.stop)
+        end = get_vertex_containing_point(vertices, line.stop)
 
         while not end:
             new_end, additionalLine = try_extending_point_by_line(
                 path[-1].stop, [line for line in lines if line not in path]
             )
-            end = get_circle_containing_point(circles, new_end)
+            end = get_vertex_containing_point(vertices, new_end)
             if additionalLine:
                 path.append(additionalLine)
             else:
@@ -421,7 +554,7 @@ def detect_edges_from_lines(
             laying_on_line = []
             for component in path:
                 if isinstance(component, Line):
-                    laying_on_line.extend(circles_on_line(circles, component))
+                    laying_on_line.extend(get_vertices_on_line(vertices, component))
                 component.used = True
 
             if len(laying_on_line) == 0 or laying_on_line[0] != begin:
@@ -484,22 +617,21 @@ def try_extending_point_by_bezier(
 
 
 def detect_edges_from_beziers(
-    circles: List[Circle],
+    vertices: List[Vertex],
     beziers: List[Bezier],
     lines: List[Line],
     edges: List[Edge],
 ) -> List[Edge]:
     for bezier in beziers:
-        k = beziers.index(bezier)
         path = [bezier]  # List of beziers/lines that connect begin to end
-        begin = get_circle_containing_point(circles, bezier.start)
+        begin = get_vertex_containing_point(vertices, bezier.start)
 
         while not begin:
             new_begin, additionalBezier = try_extending_point_by_bezier(
                 path[0].start, [bezier for bezier in beziers if bezier not in path]
             )
             if additionalBezier:
-                begin = get_circle_containing_point(circles, new_begin)
+                begin = get_vertex_containing_point(vertices, new_begin)
                 path.insert(0, additionalBezier)
 
             if not begin:
@@ -507,7 +639,7 @@ def detect_edges_from_beziers(
                     path[0].start, [line for line in lines if line not in path]
                 )
                 if additionalLine:
-                    begin = get_circle_containing_point(circles, new_begin)
+                    begin = get_vertex_containing_point(vertices, new_begin)
                     path.insert(0, additionalLine)
                 else:
                     break
@@ -516,14 +648,14 @@ def detect_edges_from_beziers(
         if begin is None:
             continue
 
-        end = get_circle_containing_point(circles, bezier.stop)
+        end = get_vertex_containing_point(vertices, bezier.stop)
 
         while not end:
             new_end, additionalBezier = try_extending_point_by_bezier(
                 path[-1].stop, [bezier for bezier in beziers if bezier not in path]
             )
             if additionalBezier:
-                end = get_circle_containing_point(circles, new_end)
+                end = get_vertex_containing_point(vertices, new_end)
                 path.append(additionalBezier)
                 continue
             if not end:
@@ -531,76 +663,42 @@ def detect_edges_from_beziers(
                     path[-1].stop, [line for line in lines if line not in path]
                 )
                 if additionalLine:
-                    end = get_circle_containing_point(circles, new_end)
+                    end = get_vertex_containing_point(vertices, new_end)
                     path.append(additionalLine)
                 else:
                     break
 
         if end is not None and begin != end:
-            circles_on_path = []
+            vertices_on_path = []
             for component in path:
                 if isinstance(component, Bezier):
-                    circles_on_path.extend(circles_on_bezier(circles, component))
+                    vertices_on_path.extend(get_vertices_on_bezier(vertices, component))
                 if isinstance(component, Line):
-                    circles_on_path.extend(circles_on_line(circles, component))
+                    vertices_on_path.extend(get_vertices_on_line(vertices, component))
                 component.used = True
 
-            if len(circles_on_path) == 0 or circles_on_path[0] != begin:
-                circles_on_path.insert(0, begin)
-            if circles_on_path[-1] != end:
-                circles_on_path.append(end)
+            if len(vertices_on_path) == 0 or vertices_on_path[0] != begin:
+                vertices_on_path.insert(0, begin)
+            if vertices_on_path[-1] != end:
+                vertices_on_path.append(end)
 
-            for i in range(len(circles_on_path) - 1):
-                edge1 = Edge(circles_on_path[i], circles_on_path[i + 1])
-                edge2 = Edge(circles_on_path[i + 1], circles_on_path[i])
+            for i in range(len(vertices_on_path) - 1):
+                edge1 = Edge(vertices_on_path[i], vertices_on_path[i + 1])
+                edge2 = Edge(vertices_on_path[i + 1], vertices_on_path[i])
                 if edge1 not in edges:
                     edges.append(edge1)
                     edges.append(edge2)
-                circles_on_path[i].used = True
-                circles_on_path[i + 1].used = True
+                vertices_on_path[i].used = True
+                vertices_on_path[i + 1].used = True
 
     return edges
 
 
-def try_converting_rect_to_lines(
-    rects: List[Rect], circles: List[Circle]
-) -> tuple[List[Rect], List[Line]]:
-    toRemove = []
-    toReturn = []
-    for rect in rects:
-        # ignore filled rectangles
-        if rect.filled:
-            continue
-
-        if (
-            get_circle_containing_point(circles, rect.topLeft) is not None
-            and get_circle_containing_point(
-                circles, (rect.topLeft[0], rect.bottomRight[1])
-            )
-            is not None
-            and get_circle_containing_point(
-                circles, (rect.bottomRight[0], rect.topLeft[1])
-            )
-            is not None
-            and get_circle_containing_point(circles, rect.bottomRight) is not None
-        ):
-            toReturn.append(Line(rect.topLeft, (rect.topLeft[0], rect.bottomRight[1])))
-            toReturn.append(Line(rect.topLeft, (rect.bottomRight[0], rect.topLeft[1])))
-            toReturn.append(
-                Line((rect.topLeft[0], rect.bottomRight[1]), rect.bottomRight)
-            )
-            toReturn.append(
-                Line((rect.bottomRight[0], rect.topLeft[1]), rect.bottomRight)
-            )
-            toRemove.append(rect)
-    rect = [rect for rect in rects if rect not in toRemove]
-    return rect, toReturn
-
-
-def create_matrix(circles: List[Circle], edges: List[Edge]) -> NDArray[Any, Bool]:
+def create_matrix(circles: List[Vertex], edges: List[Edge]) -> NDArray[Any, Bool]:
     matrix = np.zeros((len(circles), len(circles)), dtype=bool)
     for edge in edges:
-        matrix[circles.index(edge.start)][circles.index(edge.stop)] = 1
+        if edge.start in circles and edge.stop in circles:
+            matrix[circles.index(edge.start)][circles.index(edge.stop)] = 1
 
     # remove empty rows and columns
     matrix = matrix[:, ~np.all(matrix == 0, axis=0)]
@@ -608,45 +706,39 @@ def create_matrix(circles: List[Circle], edges: List[Edge]) -> NDArray[Any, Bool
     return matrix
 
 
-def find_connected_components(adj_matrix):
-    n = adj_matrix.shape[0]
-    visited = [False] * n
-    components = []
+def dfs(start: Vertex, edges: List[Edge], visited: set) -> list[Vertex]:
+    stack = [start]
+    connected_component = []
 
-    def dfs(node, component):
-        component.append(node)
-        visited[node] = True
-        for neighbor in range(n):
-            if adj_matrix[node][neighbor] == 1 and not visited[neighbor]:
-                dfs(neighbor, component)
+    while stack:
+        vertex = stack.pop()
+        if vertex in visited:
+            continue
 
-    for node in range(n):
-        if not visited[node]:
-            component = []
-            dfs(node, component)
-            components.append(component)
+        visited.add(vertex)
+        connected_component.append(vertex)
 
-    return components
+        for edge in edges:
+            if edge.start == vertex:
+                stack.append(edge.stop)
+            if edge.stop == vertex:
+                stack.append(edge.start)
 
-
-def extract_subgraph(adj_matrix, nodes):
-    subgraph_size = len(nodes)
-    subgraph = np.zeros((subgraph_size, subgraph_size), dtype=int)
-    for i in range(subgraph_size):
-        for j in range(subgraph_size):
-            subgraph[i][j] = adj_matrix[nodes[i]][nodes[j]]
-    return subgraph
+    return connected_component
 
 
-def compute_subgraphs(adj_matrix: NDArray[Any, Bool]) -> List[NDArray[Any, Bool]]:
-    components = find_connected_components(adj_matrix)
-    if len(components) == 1:
-        return [adj_matrix]
-    subgraphs = []
-    for component in components:
-        subgraph = extract_subgraph(adj_matrix, component)
-        subgraphs.append(subgraph)
-    return subgraphs
+def find_connected_components(
+    vertices: List[Vertex], edges: List[Edge]
+) -> list[list[Vertex]]:
+    visited = set()
+    connected_components = []
+
+    for vertex in vertices:
+        if vertex not in visited:
+            component = dfs(vertex, edges, visited)
+            connected_components.append(component)
+
+    return connected_components
 
 
 def max_node_degree(adj_matrix: NDArray[Any, Bool]) -> int:

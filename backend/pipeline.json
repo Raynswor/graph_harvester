@@ -1,0 +1,46 @@
+[
+    {
+        "name": "GraphExtraction",
+        "modules": [
+            {
+                "name": "PDFConverter",
+                "parameter": {
+                    "dpi": 300,
+                    "extract_drawn_figures": true
+                }
+            },
+            {
+                "name": "KeywordCaptionDetector",
+                "parameter": {
+                    "keywords": [
+                        "multiple",
+                        "Figure",
+                        "Abb.",
+                        "Fig."
+                    ],
+                    "delimiters": [
+                        ":",
+                        ".",
+                        "-",
+                        "\n"
+                    ],
+                    "removal": [],
+                    "expansion_threshold": 25,
+                    "keep_most_common": true,
+                    "lines": "Line",
+                    "strings": "String"
+                }
+            },
+            {
+                "name": "ExportDrawnFiguresModule",
+                "parameter": {
+                    "output_dir": "/tmp/", 
+                    "apply_to": "DrawnFigure",
+                    "export_references": true,
+                    "export_overlapping_text": true,
+                    "filter_smaller_areas": 150
+                }
+            }
+        ]
+    }
+]

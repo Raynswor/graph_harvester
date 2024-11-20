@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2024 Sebastian Kempf <sebastian.kempf@uni-wuerzburg.de>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+
+services:
+  # frontend:
+  #   build: 
+  #     context: graph-harvester
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - REACT_APP_BACKEND_URL=http://172.19.0.3:8000
+  backend:
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      CORS_ALLOW_ORIGINS: "*"
+      # CORS_ALLOW_ORIGINS: "http://localhost,http://frontend,http://frontend:3000"
+      PIPELINE_FILE: "/app/pipeline.json"
+    ports:
+      - "8000:8000"
+networks:
+  default:
+    name: graph-harvester_default
